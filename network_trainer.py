@@ -83,7 +83,7 @@ class GameNetwork(nn.Module):
         #conv_1_2 = F.relu(self.batch_norm_4chan_2(self.shrink_1_2(conv_1_4)))
         #print("Shrink size",conv_1_2.shape)
 
-        conv_output = F.relu(self.batch_norm_16chan(self.conv_layer_a(world_images)))
+        conv_output = F.relu(self.batch_norm_16chan(self.conv_layer_a(world_images.cuda())))
         conv_output = F.relu(self.batch_norm_32chan_1(self.conv_layer_b(conv_output)))
         conv_output = F.relu(self.batch_norm_32chan_2(self.conv_layer_c(conv_output)))
 
@@ -101,7 +101,7 @@ class GameNetwork(nn.Module):
         return self.output_layer(out_hidden)
 
     def get_best_action(self, world_state):
-        return self([world_state]).max(1)[1].view(1, 1)
+        return self([world_state]).cuda().max(1)[1].view(1, 1)
 
 
 class GameNetworkTrainer:
