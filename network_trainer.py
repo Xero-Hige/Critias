@@ -73,9 +73,9 @@ class GameNetwork(nn.Module):
     def forward(self, world_states):
         # Tensors from inputs
         actions, observations, world_images = map(np.array, zip(*world_states))
-        actions = Variable(torch.from_numpy(actions), requires_grad=True)
-        observations = Variable(torch.from_numpy(observations), requires_grad=True)
-        world_images = Variable(torch.from_numpy(world_images), requires_grad=True)
+        actions = Variable(torch.from_numpy(actions), requires_grad=True).cuda()
+        observations = Variable(torch.from_numpy(observations), requires_grad=True).cuda()
+        world_images = Variable(torch.from_numpy(world_images), requires_grad=True).cuda()
 
         # Conv Layers
         #print("World shape",world_images.shape)
@@ -141,14 +141,14 @@ class GameNetworkTrainer:
         batch = random.sample(self.replays, self.sample_batch_size)
         old_state_batch, action_batch, reward_batch, next_state_batch = map(np.array, zip(*batch))
 
-        action_batch = torch.from_numpy(action_batch).view(-1, 1)
+        action_batch = torch.from_numpy(action_batch).cuda().view(-1, 1)
 
         predicted_values = self.policy_network(old_state_batch).gather(1, action_batch)
         next_predicted_values = self.target_network(next_state_batch).max(1)[0]
 
-        expected_values = (next_predicted_values * self.GAMMA).double() + torch.from_numpy(reward_batch).double()
+        expected_values = (next_predicted_values * self.GAMMA).double() + torch.from_numpy(reward_batch).cuda().double()
 
-        loss = self.loss_fn(predicted_values.double(), expected_values)
+        loss = self.loss_fn(predicted_values.double().cuda(), expected_values)
         self.optimizer.zero_grad()
         loss.backward()
         for p in self.policy_network.parameters():
