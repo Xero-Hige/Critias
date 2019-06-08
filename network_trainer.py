@@ -120,6 +120,10 @@ class GameNetworkTrainer:
         self.target_network.load_state_dict(self.policy_network.state_dict())
         self.target_network.eval()
 
+        if torch.cuda.is_available():
+            self.policy_network.cuda()
+            self.target_network.cuda()
+
         self.optimizer = torch.optim.Adam(self.policy_network.parameters(), lr=1e-5)
         self.loss_fn = torch.nn.SmoothL1Loss(reduction='mean')
 

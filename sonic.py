@@ -42,7 +42,7 @@ DEATH_PENALTY = -1
 RINGS_LOSS_PENALTY = -0.5
 
 
-def simulate(env, action, show=True):
+def simulate(env, action, show=False):
     if show:
         env.render()
 
