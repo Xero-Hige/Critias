@@ -73,9 +73,9 @@ class GameNetwork(nn.Module):
     def forward(self, world_states):
         # Tensors from inputs
         actions, observations, world_images = map(np.array, zip(*world_states))
-        actions = Variable(torch.from_numpy(actions), requires_grad=True).cuda()
-        observations = Variable(torch.from_numpy(observations), requires_grad=True).cuda()
-        world_images = Variable(torch.from_numpy(world_images), requires_grad=True).cuda()
+        actions = Variable(torch.from_numpy(actions).cuda(), requires_grad=True).cuda()
+        observations = Variable(torch.from_numpy(observations).cuda(), requires_grad=True).cuda()
+        world_images = Variable(torch.from_numpy(world_images).cuda(), requires_grad=True).cuda()
 
         # Conv Layers
         #print("World shape",world_images.shape)
@@ -83,7 +83,7 @@ class GameNetwork(nn.Module):
         #conv_1_2 = F.relu(self.batch_norm_4chan_2(self.shrink_1_2(conv_1_4)))
         #print("Shrink size",conv_1_2.shape)
 
-        conv_output = F.relu(self.batch_norm_16chan(self.conv_layer_a(world_images.cuda())))
+        conv_output = F.relu(self.batch_norm_16chan(self.conv_layer_a(world_images)))
         conv_output = F.relu(self.batch_norm_32chan_1(self.conv_layer_b(conv_output)))
         conv_output = F.relu(self.batch_norm_32chan_2(self.conv_layer_c(conv_output)))
 
