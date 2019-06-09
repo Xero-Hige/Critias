@@ -193,3 +193,71 @@ def train():
 
         print("Play", episode + 1, "reward", play_reward)
         print("Action rate (", ai_actions / PLAY_DURATION, ")")
+
+
+def play():
+    sanic_trainer = GameNetworkTrainer(
+        actions_size=ACTIONS_SIZE,
+        actions_history_size=HISTORY_SIZE,
+        possible_actions=len(ACTIONS),
+        observation_size=OBSERVATION_SIZE,
+        save_path="state_3.sav"
+    )
+
+    ai_bot = sanic_trainer.get_policy_network()
+
+    env = ENVIRONMENT
+    env.reset()
+
+    old_state = simulate(env, ACTIONS[-1][1])
+
+    # observations
+    old_actions = [ACTIONS[-1][1] for _ in range(HISTORY_SIZE)]
+    x_speed = 0
+    y_speed = 0
+
+    #
+    play_reward = 0
+    # ------------
+
+    for frame in range(PLAY_DURATION):
+        observations = [x_speed, y_speed,
+                        old_state.x_position, old_state.y_position,
+                        old_state.score, old_state.rings,
+                        old_state.s_x, old_state.s_y,
+                        old_state.end_x]
+
+        world_state = ai_bot.process_state(old_actions, observations, old_state.world)
+
+        action = ai_bot.get_best_action(world_state)
+
+        action_desc, action_command = ACTIONS[action]
+
+        new_state = simulate(env, action_command, show=True)
+
+        for _ in range(SKIP_FRAMES):
+            new_state = simulate(env, action_command)
+
+        reward = calculate_reward(old_state, new_state)
+        play_reward += reward
+
+        x_speed = new_state.x_position - old_state.x_position
+        y_speed = new_state.y_position - old_state.y_position
+
+        old_actions.pop(0)
+        old_actions.append(action_command)
+
+        old_state = new_state
+
+        observations = [x_speed, y_speed,
+                        old_state.x_position, old_state.y_position,
+                        old_state.score, old_state.rings,
+                        old_state.s_x, old_state.s_y,
+                        old_state.end_x]
+
+        new_world_state = ai_bot.process_state(old_actions, observations,old_state.world)
+
+    print("Play reward", play_reward)
+
+while True:
+    play()

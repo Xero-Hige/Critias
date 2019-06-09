@@ -11,6 +11,7 @@ import numpy as np
 
 import cv2
 
+import math
 
 class GameNetwork(nn.Module):
     OUTPUT_AUGMENT = 5
@@ -35,11 +36,11 @@ class GameNetwork(nn.Module):
         hidden_input_size += (observation_size * actions_input_size)
 
         # Image
-        #self.shrink_1_4 = nn.Conv2d(4, 4, kernel_size=6, stride=2, padding=1)
-        #self.batch_norm_4chan_1 = nn.BatchNorm2d(4)
+        self.shrink_1_4 = nn.Conv2d(4, 4, kernel_size=6, stride=2, padding=1)
+        self.batch_norm_4chan_1 = nn.BatchNorm2d(4)
 
-        #self.shrink_1_2 = nn.Conv2d(4, 4, kernel_size=4, stride=2, padding=1)
-        #self.batch_norm_4chan_2 = nn.BatchNorm2d(4)
+        self.shrink_1_2 = nn.Conv2d(4, 4, kernel_size=4, stride=2, padding=1)
+        self.batch_norm_4chan_2 = nn.BatchNorm2d(4)
 
         self.conv_layer_a = nn.Conv2d(4, 16, kernel_size=5, stride=2)
         self.batch_norm_16chan = nn.BatchNorm2d(16)
@@ -47,10 +48,10 @@ class GameNetwork(nn.Module):
         self.conv_layer_b = nn.Conv2d(16, 32, kernel_size=5, stride=2)
         self.batch_norm_32chan_1 = nn.BatchNorm2d(32)
 
-        self.conv_layer_c = nn.Conv2d(32, 32, kernel_size=5, stride=2)
-        self.batch_norm_32chan_2 = nn.BatchNorm2d(32)
+        self.conv_layer_c = nn.Conv2d(32, 128, kernel_size=5, stride=2)
+        self.batch_norm_32chan_2 = nn.BatchNorm2d(128)
         hidden_input_size += 896
-
+        hidden_input_size = 4964
         self.hidden_to_out_hidden = nn.Linear(hidden_input_size, possible_actions * self.OUTPUT_AUGMENT)
 
         self.output_layer = nn.Linear(possible_actions * self.OUTPUT_AUGMENT, possible_actions)
@@ -59,7 +60,7 @@ class GameNetwork(nn.Module):
         self.loss_fn = None
 
     def process_state(self, actions_history, memory_observations, world_image):
-        world_image = cv2.resize(world_image, (80, 60))
+        #world_image = cv2.resize(world_image, (80, 60))
 
         b, g, r = cv2.split(world_image)
         grey = cv2.cvtColor(world_image, cv2.COLOR_BGR2GRAY)
@@ -73,19 +74,49 @@ class GameNetwork(nn.Module):
     def forward(self, world_states):
         # Tensors from inputs
         actions, observations, world_images = map(np.array, zip(*world_states))
-        actions = Variable(torch.from_numpy(actions).cuda(), requires_grad=True).cuda()
-        observations = Variable(torch.from_numpy(observations).cuda(), requires_grad=True).cuda()
-        world_images = Variable(torch.from_numpy(world_images).cuda(), requires_grad=True).cuda()
+        #actions = Variable(torch.from_numpy(actions).cuda(), requires_grad=True).cuda()
+        #observations = Variable(torch.from_numpy(observations).cuda(), requires_grad=True).cuda()
+        #world_images = Variable(torch.from_numpy(world_images).cuda(), requires_grad=True).cuda()
 
-        # Conv Layers
-        #print("World shape",world_images.shape)
-        #conv_1_4 = F.relu(self.batch_norm_4chan_1(self.shrink_1_4(world_images)))
-        #conv_1_2 = F.relu(self.batch_norm_4chan_2(self.shrink_1_2(conv_1_4)))
-        #print("Shrink size",conv_1_2.shape)
+        actions = Variable(torch.from_numpy(actions), requires_grad=True)
+        observations = Variable(torch.from_numpy(observations), requires_grad=True)
+        world_images = Variable(torch.from_numpy(world_images), requires_grad=True)
 
-        conv_output = F.relu(self.batch_norm_16chan(self.conv_layer_a(world_images)))
+        conv_1_4 = F.relu(self.batch_norm_4chan_1(self.shrink_1_4(world_images)))
+
+        channels = conv_1_4[0].detach().numpy()
+
+        channels = [np.concatenate( (channels[0:2]) ),np.concatenate((channels[2:]))]
+        channels = np.concatenate(channels,axis=1)
+        cv2.imshow("First conv",channels)
+
+        conv_1_2 = F.relu(self.batch_norm_4chan_2(self.shrink_1_2(conv_1_4)))
+
+        channels = conv_1_2[0].detach().numpy()
+
+        channels = [np.concatenate( (channels[0:2]) ),np.concatenate((channels[2:]))]
+        channels = np.concatenate(channels,axis=1)
+        cv2.imshow("Second conv",channels)
+        
+
+        conv_output = F.relu(self.batch_norm_16chan(self.conv_layer_a(conv_1_2)))
+
+        channels = conv_output[0].detach().numpy()
+        channels = [ np.concatenate(channels[i:i+4]) for i in range(16//4) ]
+        channels = np.concatenate(channels,axis=1)
+        cv2.imshow("Trird conv",channels)
+
         conv_output = F.relu(self.batch_norm_32chan_1(self.conv_layer_b(conv_output)))
+
+        channels = conv_output[0].detach().numpy()
+        channels = [ np.concatenate(channels[i:i+4]) for i in range(32//4) ]
+        channels = np.concatenate(channels,axis=1)
+        cv2.imshow("Fourth conv",channels)
+
         conv_output = F.relu(self.batch_norm_32chan_2(self.conv_layer_c(conv_output)))
+
+
+        cv2.waitKey(1)
 
         # Linear Layers
         actions_hidden = self.actions_to_hidden(actions)
@@ -101,7 +132,8 @@ class GameNetwork(nn.Module):
         return self.output_layer(out_hidden)
 
     def get_best_action(self, world_state):
-        return self([world_state]).cuda().max(1)[1].view(1, 1)
+        #return self([world_state]).cuda().max(1)[1].view(1, 1)
+        return self([world_state]).max(1)[1].view(1, 1)
 
 
 class GameNetworkTrainer:
@@ -113,9 +145,14 @@ class GameNetworkTrainer:
                  possible_actions,
                  observation_size,
                  replays_memory=550,
-                 sample_batch_size=131):
+                 sample_batch_size=131,
+                 save_path = None):
         self.policy_network = GameNetwork(actions_size, actions_history_size, possible_actions, observation_size)
         self.target_network = GameNetwork(actions_size, actions_history_size, possible_actions, observation_size)
+
+        if save_path:
+            self.policy_network.load_state_dict(torch.load(save_path,map_location='cpu'))
+            self.policy_network.eval()
 
         self.target_network.load_state_dict(self.policy_network.state_dict())
         self.target_network.eval()
@@ -141,14 +178,17 @@ class GameNetworkTrainer:
         batch = random.sample(self.replays, self.sample_batch_size)
         old_state_batch, action_batch, reward_batch, next_state_batch = map(np.array, zip(*batch))
 
-        action_batch = torch.from_numpy(action_batch).cuda().view(-1, 1)
+        #action_batch = torch.from_numpy(action_batch).cuda().view(-1, 1)
+        action_batch = torch.from_numpy(action_batch).view(-1, 1)
 
         predicted_values = self.policy_network(old_state_batch).gather(1, action_batch)
         next_predicted_values = self.target_network(next_state_batch).max(1)[0]
 
-        expected_values = (next_predicted_values * self.GAMMA).double() + torch.from_numpy(reward_batch).cuda().double()
+        #expected_values = (next_predicted_values * self.GAMMA).double() + torch.from_numpy(reward_batch).cuda().double()
+        expected_values = (next_predicted_values * self.GAMMA).double() + torch.from_numpy(reward_batch).double()
 
-        loss = self.loss_fn(predicted_values.double().cuda(), expected_values)
+        #loss = self.loss_fn(predicted_values.double().cuda(), expected_values)
+        loss = self.loss_fn(predicted_values.double(), expected_values)
         self.optimizer.zero_grad()
         loss.backward()
         for p in self.policy_network.parameters():
