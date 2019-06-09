@@ -48,7 +48,7 @@ def calculate_reward(old_state, new_state):
     if old_state.lives > new_state.lives:
         return -1
 
-    return 1 if old_state.score < old_state.score else 0
+    return 1 if old_state.score < new_state.score else 0
 
 
 TRAIN_PLAYS = 100000
@@ -69,11 +69,12 @@ HISTORY_SIZE = 30
 OBSERVATION_SIZE = 9
 
 
-def train(store_path):
+def train(store_path,load_path=None):
     musha_trainer = GameNetworkTrainer(
         possible_actions=len(ACTIONS),
         observation_size=OBSERVATION_SIZE,
-        replays_memory=550
+        replays_memory=550,
+        save_path=load_path
     )
 
     random_action_rate = INITIAL_RANDOM_ACTION_RATE + INITIAL_RANDOM_ACTION_RATE * DECAY_RATE
@@ -126,6 +127,11 @@ def train(store_path):
 
             if not reward:
                 nonaction += 1
+            else:
+                nonaction = 0
+
+            if nonaction > 600:
+                reward = -1
 
             play_reward += reward
 
@@ -155,10 +161,12 @@ def train(store_path):
 def play():
     musha_trainer = GameNetworkTrainer(
         possible_actions=len(ACTIONS),
-        observation_size=OBSERVATION_SIZE
+        observation_size=OBSERVATION_SIZE,
+        save_path="musha_state"
     )
 
     musha_pilot = musha_trainer.get_policy_network()
+    musha_pilot.set_debug(True)
 
     env = ENVIRONMENT
     env.reset()
@@ -188,6 +196,11 @@ def play():
 
         if not reward:
             nonaction += 1
+        else:
+            nonaction = 0
+
+        if nonaction > 600:
+            reward = -1
 
         play_reward += reward
 
@@ -200,3 +213,6 @@ def play():
             break
 
     print("Play reward", play_reward)
+
+while True:
+    play()

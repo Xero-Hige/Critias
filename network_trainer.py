@@ -51,6 +51,9 @@ class MushaNetwork(nn.Module):
         self.optimizer = None
         self.loss_fn = None
 
+    def set_debug(self,debug):
+        self.debug = debug
+
     def process_state(self, world_image):
         b, g, r = cv2.split(world_image)
         grey = cv2.cvtColor(world_image, cv2.COLOR_BGR2GRAY)
