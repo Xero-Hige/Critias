@@ -179,7 +179,7 @@ class GameNetworkTrainer:
         if self.has_cuda:
             predicted_values = predicted_values.cuda()
 
-        loss = self.loss_fn(predicted_values.double(), expected_values)
+        loss = self.loss_fn(predicted_values.double().reshape(-1), expected_values.reshape(-1))
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()

@@ -110,7 +110,7 @@ def train(store_path):
             world_state = musha_pilot.process_state(old_state.world)
 
             if episode % TRAIN_CHECKPOINT == 0 or random.random() > random_action_rate:
-                action = musha_pilot.get_best_action(world_state)
+                action = musha_pilot.get_best_action(world_state).item()
                 ai_actions += 1
             else:
                 action = random.randint(0, len(ACTIONS) - 1)
@@ -131,7 +131,7 @@ def train(store_path):
 
             new_world_state = musha_pilot.process_state(old_state.world)
 
-            musha_trainer.add_replay(world_state, action.item(), reward, new_world_state)
+            musha_trainer.add_replay(world_state, action, reward, new_world_state)
 
             old_state = new_state
 
