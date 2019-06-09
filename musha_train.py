@@ -69,7 +69,7 @@ HISTORY_SIZE = 30
 OBSERVATION_SIZE = 9
 
 
-def train(store_path,load_path=None):
+def train(store_path, load_path=None, start_episode=0):
     musha_trainer = GameNetworkTrainer(
         possible_actions=len(ACTIONS),
         observation_size=OBSERVATION_SIZE,
@@ -81,7 +81,7 @@ def train(store_path,load_path=None):
 
     frames = 0
 
-    for episode in range(TRAIN_PLAYS):
+    for episode in range(start_episode * TRAIN_CHECKPOINT, TRAIN_PLAYS):
         musha_pilot = musha_trainer.get_policy_network()
 
         ai_actions = 0
@@ -130,7 +130,7 @@ def train(store_path,load_path=None):
             else:
                 nonaction = 0
 
-            if nonaction > 600:
+            if nonaction > 350:
                 reward = -1
 
             play_reward += reward
@@ -141,7 +141,7 @@ def train(store_path,load_path=None):
 
             old_state = new_state
 
-            if old_state.done or nonaction > 600:
+            if old_state.done or nonaction > 350:
                 break
 
             if frames < 550:
@@ -213,6 +213,7 @@ def play():
             break
 
     print("Play reward", play_reward)
+
 
 while True:
     play()
