@@ -215,5 +215,5 @@ def play():
     print("Play reward", play_reward)
 
 
-while True:
-    play()
+#while True:
+#    play()
