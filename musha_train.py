@@ -131,7 +131,7 @@ def train(store_path):
 
             new_world_state = musha_pilot.process_state(old_state.world)
 
-            musha_trainer.add_replay(world_state, action, reward, new_world_state)
+            musha_trainer.add_replay(world_state, action.item(), reward, new_world_state)
 
             old_state = new_state
 
