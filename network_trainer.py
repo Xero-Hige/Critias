@@ -191,4 +191,4 @@ class GameNetworkTrainer:
         self.target_network.load_state_dict(self.policy_network.state_dict())
 
     def store_policy(self, path):
-        torch.save(self.policy_network().state_dict(), path)
+        torch.save(self.policy_network.state_dict(), path)
