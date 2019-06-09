@@ -132,8 +132,8 @@ class GameNetworkTrainer:
 
         self.has_cuda = torch.cuda.is_available()
 
-        self.policy_network = MushaNetwork(possible_actions, observation_size)
-        self.target_network = MushaNetwork(possible_actions, observation_size)
+        self.policy_network = MushaNetwork(possible_actions)
+        self.target_network = MushaNetwork(possible_actions)
 
         if save_path:
             self.policy_network.load_state_dict(torch.load(save_path, map_location='cpu'))
