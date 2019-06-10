@@ -108,7 +108,7 @@ INITIAL_RANDOM_ACTION_RATE = 0.95
 DECAY_RATE = 0.001
 MIN_RANDOM_ACTION_RATE = 0.05
 
-SKIP_FRAMES = 4
+SKIP_FRAMES = 2
 
 ACTIONS_SIZE = 5
 HISTORY_SIZE = 30
@@ -318,8 +318,7 @@ def play():
 
     print("Play reward", play_reward)
 
-    if input("Save? [y/N]").lower() == "y":
-        replay_recorder.store_replay("musha_replay")
+    replay_recorder.store_replay("musha_replay")
     replay_recorder.clean()
 
     env = ENVIRONMENT
