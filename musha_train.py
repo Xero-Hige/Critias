@@ -1,16 +1,13 @@
 from __future__ import print_function
 
+import json
+import random
+import time
 from collections import namedtuple
 
 import retro
-import numpy as np
-import cv2
-import pickle
-import random
 
 from network_trainer import GameNetworkTrainer
-
-# random.seed(99)
 
 ENVIRONMENT = retro.make("MUSHA-Genesis", "Level1")
 
@@ -48,7 +45,58 @@ def calculate_reward(old_state, new_state):
     if old_state.lives > new_state.lives:
         return -1
 
-    return 1 if old_state.score < new_state.score else 0
+    if old_state.lives < new_state.lives:
+        return 1
+
+    score_diff = new_state.score - old_state.score - 30
+    score_diff /= 400
+
+    return max(min(score_diff, 1), 0)
+
+
+class ReplaySaver:
+
+    def __init__(self, backtrack=50, track_bonus=True):
+        self.replays = []
+        self.replays_bonus = []
+        self.backtrack = backtrack
+        self.track_bonus = track_bonus
+        self.fist_blood = False
+
+    def push_action(self, action, bonus):
+        if self.fist_blood:
+            return
+
+        if bonus < 0:
+            self.fist_blood = True
+
+        self.replays.append(action)
+        self.replays_bonus.append(bonus)
+
+    def store_replay(self, replay_path):
+        for _ in range(self.backtrack):
+            self.replays.pop()
+            self.replays_bonus.pop()
+
+        while self.track_bonus and self.replays_bonus[-1] == 0:
+            self.replays.pop()
+            self.replays_bonus.pop()
+
+        with open(replay_path, "w") as output:
+            output.write(json.dumps(self.replays))
+
+    def clean(self):
+        self.replays = []
+        self.replays_bonus = []
+        self.fist_blood = False
+
+    @staticmethod
+    def play_replay(replay_path):
+        with open(replay_path) as replay_file:
+            plays = json.loads(replay_file.read())
+
+        for p in plays:
+            yield p
 
 
 TRAIN_PLAYS = 100000
@@ -69,7 +117,7 @@ HISTORY_SIZE = 30
 OBSERVATION_SIZE = 9
 
 
-def train(store_path, load_path=None, start_episode=0):
+def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl"):
     musha_trainer = GameNetworkTrainer(
         possible_actions=len(ACTIONS),
         observation_size=OBSERVATION_SIZE,
@@ -82,17 +130,28 @@ def train(store_path, load_path=None, start_episode=0):
     frames = 0
 
     for episode in range(start_episode * TRAIN_CHECKPOINT, TRAIN_PLAYS):
+        replay_actions = ReplaySaver.play_replay(replay_file)
+
         musha_pilot = musha_trainer.get_policy_network()
 
         ai_actions = 0
+        replay_recorder = None
 
         if random_action_rate > MIN_RANDOM_ACTION_RATE:
             random_action_rate -= (random_action_rate * DECAY_RATE)
         elif random_action_rate < MIN_RANDOM_ACTION_RATE:
             random_action_rate = MIN_RANDOM_ACTION_RATE
 
-        if episode % TRAIN_CHECKPOINT == 0:
+        ai_game = False
+        replay_game = False
+
+        if frames == 0 or episode + 1 % TRAIN_CHECKPOINT == 0:
+            print("Replay game")
+            replay_game = True
+        elif episode % TRAIN_CHECKPOINT == 0:
             print("AI GAME ", end=" ")
+            ai_game = True
+            replay_recorder = ReplaySaver()
 
         env = ENVIRONMENT
         env.reset()
@@ -105,12 +164,38 @@ def train(store_path, load_path=None, start_episode=0):
         nonaction = 0
 
         while True:
-
             frames = min(frames + 1, 550)
 
             world_state = musha_pilot.process_state(old_state.world)
 
-            if episode % TRAIN_CHECKPOINT == 0 or random.random() > random_action_rate:
+            if not replay_game:
+                action = next(replay_actions, None)
+                if action is not None:
+                    action_desc, action_command = ACTIONS[action]
+                    new_state = simulate(env, action_command, show=False)
+
+                    for _ in range(SKIP_FRAMES):
+                        new_state = simulate(env, action_command)
+
+                    reward = calculate_reward(old_state, new_state)
+
+                    nonaction += 1
+                    if reward:
+                        nonaction = 0
+
+                    if nonaction > 350:
+                        reward = -1
+
+                    play_reward += reward
+                    new_world_state = musha_pilot.process_state(old_state.world)
+                    musha_trainer.add_replay(world_state, action, reward, new_world_state)
+
+                    old_state = new_state
+                    continue
+
+            if replay_game:
+                action = next(replay_actions, musha_pilot.get_best_action(world_state).item())
+            elif ai_game or random.random() > random_action_rate:
                 action = musha_pilot.get_best_action(world_state).item()
                 ai_actions += 1
             else:
@@ -133,6 +218,9 @@ def train(store_path, load_path=None, start_episode=0):
             if nonaction > 350:
                 reward = -1
 
+            if replay_recorder:
+                replay_recorder.push_action(action, reward)
+
             play_reward += reward
 
             new_world_state = musha_pilot.process_state(old_state.world)
@@ -148,6 +236,9 @@ def train(store_path, load_path=None, start_episode=0):
                 continue
 
             musha_trainer.train()
+
+        if replay_recorder:
+            replay_recorder.store_replay(replay_file)
 
         if episode % TARGET_UPDATE == 0:
             musha_trainer.update_target()
@@ -173,17 +264,31 @@ def play():
 
     old_state = simulate(env, ACTIONS[-1][1])
 
-    old_actions = [ACTIONS[-1][1] for _ in range(HISTORY_SIZE)]
     print("playing")
     #
     play_reward = 0
     # ------------
     nonaction = 0
 
+    replay_recorder = ReplaySaver()
+
     for frame in range(PLAY_DURATION):
         world_state = musha_pilot.process_state(old_state.world)
 
-        action = musha_pilot.get_best_action(world_state)
+        if keyboard.is_pressed("down"):
+            action = 1
+            time.sleep(3 / 60)
+        elif keyboard.is_pressed("left"):
+            action = 2
+            time.sleep(3 / 60)
+        elif keyboard.is_pressed("right"):
+            action = 3
+            time.sleep(3 / 60)
+        elif keyboard.is_pressed("a"):
+            action = 4
+            time.sleep(3 / 60)
+        else:
+            action = musha_pilot.get_best_action(world_state)
 
         action_desc, action_command = ACTIONS[action]
 
@@ -199,21 +304,59 @@ def play():
         else:
             nonaction = 0
 
-        if nonaction > 600:
+        if nonaction > 350:
             reward = -1
+
+        replay_recorder.push_action(int(action), reward)
 
         play_reward += reward
 
-        old_actions.pop(0)
-        old_actions.append(action_command)
-
         old_state = new_state
 
-        if old_state.done or nonaction > 600:
+        if old_state.done or nonaction > 350:
             break
 
     print("Play reward", play_reward)
 
+    if input("Save? [y/N]").lower() == "y":
+        replay_recorder.store_replay("musha_replay")
+    replay_recorder.clean()
 
-#while True:
-#    play()
+    env = ENVIRONMENT
+    env.reset()
+
+    print("Play replay")
+    for p in ReplaySaver.play_replay("musha_replay"):
+        action_desc, action_command = ACTIONS[p]
+
+        new_state = simulate(env, action_command, show=True)
+
+        for _ in range(SKIP_FRAMES):
+            new_state = simulate(env, action_command)
+
+        time.sleep(3 / 60)
+        reward = calculate_reward(old_state, new_state)
+
+        if not reward:
+            nonaction += 1
+        else:
+            nonaction = 0
+
+        if nonaction > 350:
+            reward = -1
+
+        replay_recorder.push_action(p, reward)
+
+        play_reward += reward
+
+        old_state = new_state
+
+        if old_state.done or nonaction > 350:
+            break
+
+
+if __name__ == '__main__':
+    import keyboard
+
+    while True:
+        play()
