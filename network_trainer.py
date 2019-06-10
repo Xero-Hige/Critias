@@ -51,7 +51,7 @@ class MushaNetwork(nn.Module):
         self.optimizer = None
         self.loss_fn = None
 
-    def set_debug(self,debug):
+    def set_debug(self, debug):
         self.debug = debug
 
     def process_state(self, world_image):
@@ -70,51 +70,35 @@ class MushaNetwork(nn.Module):
             world_images = world_images.cuda()
 
         conv_output = F.relu(self.max_pool_shrink_1_2(self.conv_input_a_bn(self.conv_input_a(world_images))))
-
-        if self.debug:
-            channels = conv_output[0].detach().numpy()
-
-            channels = [np.concatenate(channels[i:i + 2]) for i in range(8 // 2)]
-            channels = np.concatenate(channels, axis=1)
-            cv2.imshow("First 2dconv", channels)
+        self.show_conv_layer(conv_output, 8, 2, "First 2dconv")
 
         conv_output = F.relu(self.max_pool_shrink_1_2(self.conv_input_b_bn(self.conv_input_b(conv_output))))
-
-        if self.debug:
-            channels = conv_output[0].detach().numpy()
-            channels = [np.concatenate(channels[i:i + 4]) for i in range(16 // 4)]
-            channels = np.concatenate(channels, axis=1)
-            cv2.imshow("Second 2dconv", channels)
+        self.show_conv_layer(conv_output, 16, 4, "Second 2dconv")
 
         conv_output = F.relu(self.max_pool_conv_a(self.conv_layer_a_bn(self.conv_layer_a(conv_output))))
-
-        if self.debug:
-            channels = conv_output[0].detach().numpy()
-            channels = [np.concatenate(channels[i:i + 4]) for i in range(32 // 4)]
-            channels = np.concatenate(channels, axis=1)
-            cv2.imshow("Trird conv", channels)
+        self.show_conv_layer(conv_output, 32, 4, "Third 2dconv")
 
         conv_output = F.relu(self.max_pool_conv_b(self.conv_layer_b_bn(self.conv_layer_b(conv_output))))
-
-        if self.debug:
-            channels = conv_output[0].detach().numpy()
-            channels = [np.concatenate(channels[i:i + 16]) for i in range(128 // 16)]
-            channels = np.concatenate(channels, axis=1)
-            cv2.imshow("Fourth conv", channels)
+        self.show_conv_layer(conv_output, 128, 16, "Fourth 2dconv")
 
         conv_output = F.relu(self.max_pool_conv_c(self.conv_layer_c_bn(self.conv_layer_c(conv_output))))
-
-        if self.debug:
-            channels = conv_output[0].detach().numpy()
-            channels = [np.concatenate(channels[i:i + 16]) for i in range(256 // 16)]
-            channels = np.concatenate(channels, axis=1)
-            cv2.imshow("Fifth conv", channels)
+        self.show_conv_layer(conv_output, 256, 16, "Fifth 2dconv")
 
         if self.debug:
             cv2.waitKey(1)
 
         hidden = F.relu(self.hidden_layer(conv_output.view(conv_output.size(0), -1)))
         return self.output_layer(hidden)
+
+    def show_conv_layer(self, conv_output, elements, stride, title):
+        if not self.debug:
+            return
+
+        channels = conv_output[0].detach().numpy()
+
+        channels = [np.concatenate(channels[(i * stride):(i + 1) * stride]) for i in range(elements // stride)]
+        channels = np.concatenate(channels, axis=1)
+        cv2.imshow(title, channels)
 
     def get_best_action(self, world_state):
         if self.has_cuda:
