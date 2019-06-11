@@ -64,8 +64,8 @@ class ReplaySaver:
         self.fist_blood = False
 
     def push_action(self, action, bonus):
-        if self.fist_blood:
-            return
+        #if self.fist_blood:
+        #    return
 
         if bonus < 0:
             self.fist_blood = True
@@ -75,10 +75,12 @@ class ReplaySaver:
 
     def store_replay(self, replay_path):
         for _ in range(self.backtrack):
+            if not self.replays:
+                break
             self.replays.pop()
             self.replays_bonus.pop()
 
-        while self.track_bonus and self.replays_bonus[-1] == 0:
+        while self.track_bonus and self.replays_bonus and self.replays_bonus[-1] == 0:
             self.replays.pop()
             self.replays_bonus.pop()
 
@@ -184,7 +186,7 @@ def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl")
                         nonaction = 0
 
                     if nonaction > 350:
-                        reward = -1
+                        reward = -5
 
                     play_reward += reward
                     new_world_state = musha_pilot.process_state(old_state.world)
