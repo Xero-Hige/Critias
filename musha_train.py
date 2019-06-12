@@ -25,7 +25,7 @@ ACTIONS = (
     ("DOWN_SHOOT", [0, 1, 0, 0, 1]),
     ("RIGHT_SHOOT", [0, 0, 1, 0, 1]),
     ("LEFT_SHOOT", [0, 0, 0, 1, 1]),
-    ("NOTHING", [0] * 5)
+    ("NOTHING_SHOOT", [0,0,0,0,1])
 )
 
 
@@ -202,7 +202,8 @@ def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl")
                 ai_actions += 1
             else:
                 action = random.randint(0, len(ACTIONS) - 1)
-
+            
+            action = action if action >= 5 else action+5
             action_desc, action_command = ACTIONS[action]
 
             new_state = simulate(env, action_command, show=False)
