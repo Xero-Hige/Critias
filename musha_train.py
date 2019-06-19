@@ -121,7 +121,7 @@ HISTORY_SIZE = 30
 # X_SPEED Y_SPEED XPOS YPOS RINGS SCORE END_X X_SCREEN Y_SCREEN
 OBSERVATION_SIZE = 9
 
-REPLAY_MEMORY = 2
+REPLAY_MEMORY = 1150
 
 
 def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl"):
