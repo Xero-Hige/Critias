@@ -11,17 +11,19 @@ from torch.autograd import Variable
 
 
 class MushaNetwork(nn.Module):
-    OUTPUT_AUGMENT = 10
+    OUTPUT_AUGMENT = 15
 
     WorldState = namedtuple("WorldState", "world_image")
 
     def __init__(self,
                  possible_actions,
-                 debug=False):
+                 debug=False,
+                 testing=False):
         super(MushaNetwork, self).__init__()
 
         self.debug = debug
         self.has_cuda = torch.cuda.is_available()
+        self.testing = testing
 
         self.max_pool_shrink_1_2 = torch.nn.MaxPool2d(2, 2)
         self.max_pool_conv_a = torch.nn.MaxPool2d((2, 2), (1, 2))
@@ -29,23 +31,26 @@ class MushaNetwork(nn.Module):
         self.max_pool_conv_c = torch.nn.MaxPool2d((2, 3), 2)
 
         # Image
-        self.conv_input_a = nn.Conv2d(4, 8, kernel_size=4)
-        self.conv_input_a_bn = nn.BatchNorm2d(8)
+        self.conv_input_a = nn.Conv2d(5, 10, kernel_size=7)
+        self.conv_input_a_bn = nn.BatchNorm2d(10)
 
-        self.conv_input_b = nn.Conv2d(8, 16, kernel_size=5)
-        self.conv_input_b_bn = nn.BatchNorm2d(16)
+        self.conv_input_b = nn.Conv2d(10, 20, kernel_size=5)
+        self.conv_input_b_bn = nn.BatchNorm2d(20)
 
-        self.conv_layer_a = nn.Conv2d(16, 32, kernel_size=(2, 3))
-        self.conv_layer_a_bn = nn.BatchNorm2d(32)
+        self.conv_layer_dropout = nn.Dropout2d(0.1)
 
-        self.conv_layer_b = nn.Conv2d(32, 128, kernel_size=(3, 2))
+        self.conv_layer_a = nn.Conv2d(20, 40, kernel_size=(3, 4))
+        self.conv_layer_a_bn = nn.BatchNorm2d(40)
+
+        self.conv_layer_b = nn.Conv2d(40, 128, kernel_size=(4, 3))
         self.conv_layer_b_bn = nn.BatchNorm2d(128)
 
-        self.conv_layer_c = nn.Conv2d(128, 256, kernel_size=5)
+        self.conv_layer_c = nn.Conv2d(128, 256, kernel_size=4)
         self.conv_layer_c_bn = nn.BatchNorm2d(256)
 
-        hidden_input_size = 32256
+        hidden_input_size = 29952
         self.hidden_layer = nn.Linear(hidden_input_size, possible_actions * self.OUTPUT_AUGMENT)
+        self.hidden_dropout = nn.Dropout()
         self.output_layer = nn.Linear(possible_actions * self.OUTPUT_AUGMENT, possible_actions)
 
         self.optimizer = None
@@ -54,11 +59,21 @@ class MushaNetwork(nn.Module):
     def set_debug(self, debug):
         self.debug = debug
 
-    def process_state(self, world_image):
-        b, g, r = cv2.split(world_image)
-        grey = cv2.cvtColor(world_image, cv2.COLOR_BGR2GRAY)
+    def process_state(self, world_image, old_world_image, flip=False):
 
-        imgarray = np.array([b, g, r, grey]).astype(np.float32)
+        if flip:
+            world_image = cv2.flip(world_image, 1)
+            old_world_image = cv2.flip(old_world_image, 1)
+
+        difference = cv2.subtract(old_world_image, world_image)
+        difference = cv2.cvtColor(difference, cv2.COLOR_BGR2GRAY)
+        grey = cv2.cvtColor(world_image, cv2.COLOR_BGR2GRAY)
+        b, g, r = cv2.split(world_image)
+
+        # difference = cv2.subtract(cv2.cvtColor(old_world_image, cv2.COLOR_BGR2GRAY), grey)
+
+        imgarray = np.array([b, g, r, grey, difference]).astype(np.float32)
+        imgarray /= 255
 
         return self.WorldState(imgarray)
 
@@ -69,25 +84,35 @@ class MushaNetwork(nn.Module):
         if self.has_cuda:
             world_images = world_images.cuda()
 
+        self.show_conv_layer(world_images, 5, 1, "Input")
+
         conv_output = F.relu(self.max_pool_shrink_1_2(self.conv_input_a_bn(self.conv_input_a(world_images))))
-        self.show_conv_layer(conv_output, 8, 2, "First 2dconv")
+        self.show_conv_layer(conv_output, 10, 2, "First 2dconv")
 
         conv_output = F.relu(self.max_pool_shrink_1_2(self.conv_input_b_bn(self.conv_input_b(conv_output))))
-        self.show_conv_layer(conv_output, 16, 4, "Second 2dconv")
+        self.show_conv_layer(conv_output, 20, 4, "Second 2dconv")
 
         conv_output = F.relu(self.max_pool_conv_a(self.conv_layer_a_bn(self.conv_layer_a(conv_output))))
-        self.show_conv_layer(conv_output, 32, 4, "Third 2dconv")
+        if not self.testing:
+            conv_output = self.conv_layer_dropout(conv_output)
+        self.show_conv_layer(conv_output, 40, 4, "Third 2dconv")
 
         conv_output = F.relu(self.max_pool_conv_b(self.conv_layer_b_bn(self.conv_layer_b(conv_output))))
+        if not self.testing:
+            conv_output = self.conv_layer_dropout(conv_output)
         self.show_conv_layer(conv_output, 128, 16, "Fourth 2dconv")
 
         conv_output = F.relu(self.max_pool_conv_c(self.conv_layer_c_bn(self.conv_layer_c(conv_output))))
+        if not self.testing:
+            conv_output = self.conv_layer_dropout(conv_output)
         self.show_conv_layer(conv_output, 256, 16, "Fifth 2dconv")
 
         if self.debug:
             cv2.waitKey(1)
 
         hidden = F.relu(self.hidden_layer(conv_output.view(conv_output.size(0), -1)))
+        if not self.testing:
+            hidden = self.hidden_dropout(hidden)
         return self.output_layer(hidden)
 
     def show_conv_layer(self, conv_output, elements, stride, title):

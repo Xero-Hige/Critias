@@ -16,16 +16,19 @@ State = namedtuple("State", "world lives score done reward")
 # ACTION: [0, 0, 0, 0, UP, DOWN, LEFT, RIGHT, JUMP, 0, 0, 0]
 
 ACTIONS = (
-    ("UP", [1, 0, 0, 0, 0]),
-    ("DOWN", [0, 1, 0, 0, 0]),
-    ("LEFT", [0, 0, 1, 0, 0]),
-    ("RIGHT", [0, 0, 0, 1, 0]),
-    ("SHOOT", [0, 0, 0, 0, 1]),
     ("UP_SHOOT", [1, 0, 0, 0, 1]),
     ("DOWN_SHOOT", [0, 1, 0, 0, 1]),
     ("RIGHT_SHOOT", [0, 0, 1, 0, 1]),
     ("LEFT_SHOOT", [0, 0, 0, 1, 1]),
-    ("NOTHING", [0] * 5)
+    ("NOTHING_SHOOT", [0, 0, 0, 0, 1])
+)
+
+ACTIONS_MIRRORED = (
+    ("UP_SHOOT", [1, 0, 0, 0, 1]),
+    ("DOWN_SHOOT", [0, 1, 0, 0, 1]),
+    ("RIGHT_SHOOT", [0, 0, 0, 1, 1]),
+    ("LEFT_SHOOT", [0, 0, 1, 0, 1]),
+    ("NOTHING_SHOOT", [0, 0, 0, 0, 1])
 )
 
 
@@ -64,7 +67,7 @@ class ReplaySaver:
         self.fist_blood = False
 
     def push_action(self, action, bonus):
-        #if self.fist_blood:
+        # if self.fist_blood:
         #    return
 
         if bonus < 0:
@@ -107,7 +110,7 @@ PLAY_DURATION = 1200
 TARGET_UPDATE = 10
 
 INITIAL_RANDOM_ACTION_RATE = 0.95
-DECAY_RATE = 0.001
+DECAY_RATE = 0.01
 MIN_RANDOM_ACTION_RATE = 0.05
 
 SKIP_FRAMES = 4
@@ -118,12 +121,14 @@ HISTORY_SIZE = 30
 # X_SPEED Y_SPEED XPOS YPOS RINGS SCORE END_X X_SCREEN Y_SCREEN
 OBSERVATION_SIZE = 9
 
+REPLAY_MEMORY = 2
+
 
 def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl"):
     musha_trainer = GameNetworkTrainer(
         possible_actions=len(ACTIONS),
         observation_size=OBSERVATION_SIZE,
-        replays_memory=550,
+        replays_memory=REPLAY_MEMORY,
         save_path=load_path
     )
 
@@ -159,58 +164,33 @@ def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl")
         env.reset()
 
         old_state = simulate(env, ACTIONS[-1][1])
+        actual_state = simulate(env, ACTIONS[-1][1])
 
         #
         play_reward = 0
+        episode_frame = 0
         # ------------
         nonaction = 0
-
+        mirror_episode = episode + 1 % 2 == 0
         while True:
-            frames = min(frames + 1, 550)
+            frames = min(frames + 1, REPLAY_MEMORY)
+            episode_frame += 1
 
-            world_state = musha_pilot.process_state(old_state.world)
+            world_state = musha_pilot.process_state(actual_state.world, old_state.world, flip=mirror_episode)
 
-            if not replay_game:
-                action = next(replay_actions, None)
-                if action is not None:
-                    action_desc, action_command = ACTIONS[action]
-                    new_state = simulate(env, action_command, show=False)
-
-                    for _ in range(SKIP_FRAMES):
-                        new_state = simulate(env, action_command)
-
-                    reward = calculate_reward(old_state, new_state)
-
-                    nonaction += 1
-                    if reward:
-                        nonaction = 0
-
-                    if nonaction > 350:
-                        reward = -5
-
-                    play_reward += reward
-                    new_world_state = musha_pilot.process_state(old_state.world)
-                    musha_trainer.add_replay(world_state, action, reward, new_world_state)
-
-                    old_state = new_state
-                    continue
-
-            if replay_game:
+            if replay_game or ai_game or random.random() > random_action_rate:
                 action = next(replay_actions, musha_pilot.get_best_action(world_state).item())
-            elif ai_game or random.random() > random_action_rate:
-                action = musha_pilot.get_best_action(world_state).item()
                 ai_actions += 1
             else:
-                action = random.randint(0, len(ACTIONS) - 1)
+                action = next(replay_actions, random.randint(0, len(ACTIONS) - 1))
 
-            action_desc, action_command = ACTIONS[action]
+            action_desc, action_command = ACTIONS[action] if not mirror_episode else ACTIONS_MIRRORED[action]
 
-            new_state = simulate(env, action_command, show=False)
+            old_state = actual_state
+            for _ in range(SKIP_FRAMES + 1):
+                actual_state = simulate(env, action_command)
 
-            for _ in range(SKIP_FRAMES):
-                new_state = simulate(env, action_command)
-
-            reward = calculate_reward(old_state, new_state)
+            reward = calculate_reward(old_state, actual_state)
 
             if not reward:
                 nonaction += 1
@@ -218,26 +198,25 @@ def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl")
                 nonaction = 0
 
             if nonaction > 350:
-                reward = -1
+                reward = -5
 
             if replay_recorder:
                 replay_recorder.push_action(action, reward)
 
             play_reward += reward
 
-            new_world_state = musha_pilot.process_state(old_state.world)
+            new_world_state = musha_pilot.process_state(actual_state.world, old_state.world, flip=mirror_episode)
 
             musha_trainer.add_replay(world_state, action, reward, new_world_state)
 
-            old_state = new_state
-
-            if old_state.done or nonaction > 350:
+            if actual_state.done or nonaction > 350:
                 break
 
-            if frames < 550:
+            if frames < REPLAY_MEMORY:
                 continue
 
-            musha_trainer.train()
+            if random.random() > 0.8:
+                musha_trainer.train()
 
         if replay_recorder:
             replay_recorder.store_replay(replay_file)
@@ -246,7 +225,7 @@ def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl")
             musha_trainer.update_target()
 
         print("Play", episode + 1, "reward", play_reward)
-        print("Action rate (", ai_actions / PLAY_DURATION, ")")
+        print(f"Action rate: {ai_actions / episode_frame} ({ai_actions} in {episode_frame})")
 
         musha_trainer.store_policy(store_path + f"/musha_state_{episode // TRAIN_CHECKPOINT}")
 
@@ -255,7 +234,7 @@ def play():
     musha_trainer = GameNetworkTrainer(
         possible_actions=len(ACTIONS),
         observation_size=OBSERVATION_SIZE,
-        save_path="musha_state"
+        #       save_path="musha_state"
     )
 
     musha_pilot = musha_trainer.get_policy_network()
@@ -265,6 +244,7 @@ def play():
     env.reset()
 
     old_state = simulate(env, ACTIONS[-1][1])
+    actual_state = simulate(env, ACTIONS[-1][1])
 
     print("playing")
     #
@@ -273,9 +253,10 @@ def play():
     nonaction = 0
 
     replay_recorder = ReplaySaver()
+    mirror_episode = random.choice([True, False])
 
     for frame in range(PLAY_DURATION):
-        world_state = musha_pilot.process_state(old_state.world)
+        world_state = musha_pilot.process_state(actual_state.world, old_state.world,mirror_episode)
 
         if keyboard.is_pressed("down"):
             action = 1
@@ -290,16 +271,15 @@ def play():
             action = 4
             time.sleep(3 / 60)
         else:
-            action = musha_pilot.get_best_action(world_state)
+            action = musha_pilot.get_best_action(world_state).item()
 
-        action_desc, action_command = ACTIONS[action]
+        action_desc, action_command = ACTIONS[action] if not mirror_episode else ACTIONS_MIRRORED[action]
 
-        new_state = simulate(env, action_command, show=True)
+        old_state = actual_state
+        for _ in range(SKIP_FRAMES + 1):
+            actual_state = simulate(env, action_command, show=True)
 
-        for _ in range(SKIP_FRAMES):
-            new_state = simulate(env, action_command)
-
-        reward = calculate_reward(old_state, new_state)
+        reward = calculate_reward(old_state, actual_state)
 
         if not reward:
             nonaction += 1
@@ -307,15 +287,14 @@ def play():
             nonaction = 0
 
         if nonaction > 350:
-            reward = -1
+            reward = -5
 
-        replay_recorder.push_action(int(action), reward)
+        if replay_recorder:
+            replay_recorder.push_action(action, reward)
 
         play_reward += reward
 
-        old_state = new_state
-
-        if old_state.done or nonaction > 350:
+        if actual_state.done or nonaction > 350:
             break
 
     print("Play reward", play_reward)
