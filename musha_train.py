@@ -177,8 +177,10 @@ def train(store_path, load_path=None, start_episode=0, replay_file="replay.rpl")
             episode_frame += 1
 
             world_state = musha_pilot.process_state(actual_state.world, old_state.world, flip=mirror_episode)
-
-            if replay_game or ai_game or random.random() > random_action_rate:
+            
+            if ai_game:
+                action = musha_pilot.get_best_action(world_state).item()
+            elif replay_game or random.random() > random_action_rate:
                 action = next(replay_actions, musha_pilot.get_best_action(world_state).item())
                 ai_actions += 1
             else:
